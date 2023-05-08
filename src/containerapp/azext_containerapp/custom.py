@@ -4335,8 +4335,7 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
             if lines.find(b"status code 401 Unauthorized") != -1 or lines.find(b"unable to find image") != -1:
                 bom = dict(remote_info=401)
             else:
-                 
-            bom.update({ "targetContainerAppName": img["targetContainerAppName"] })
+                bom.update({ "targetContainerAppName": img["targetContainerAppName"] })
         boms.append(bom)
 
     ## For testing

@@ -4333,7 +4333,6 @@ def patch_list(cmd, resource_group_name, managed_env, show_all=False):
         boms.append(bom)
 
     # # For testing
-    
     # with open("./bom.json", "rb") as f:
     #     lines = f.read()
     #     # if lines.find(b"status code 401 Unauthorized") == -1 or lines.find(b"unable to find image") == -1:
@@ -4357,7 +4356,6 @@ def patch_list(cmd, resource_group_name, managed_env, show_all=False):
             # devide run-images into different parts by "/"
             runImagesProps = bom["remote_info"]["run_images"]
             if runImagesProps is None:
-                
                 results["NotPatchable"].append(dict(targetContainerName=bom["targetContainerName"], targetContainerAppName=bom["targetContainerAppName"], revisionMode=bom["revisionMode"], targetImageName=bom["image_name"], oldRunImage=None, newRunImage=None, id=None, reason=notBasedMarinerReason))
             else:
                 for runImagesProp in runImagesProps:
@@ -4429,4 +4427,3 @@ def patch_cli_call(cmd, resource_group, container_app_name, container_name, targ
     except Exception:
         print("Error: Failed to create new revision with the container app.")
         raise
-

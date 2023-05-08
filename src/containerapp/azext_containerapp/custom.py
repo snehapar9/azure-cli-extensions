@@ -4301,24 +4301,14 @@ def delete_workload_profile(cmd, resource_group_name, env_name, workload_profile
     except Exception as e:
         handle_raw_exception(e)
 
-def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
-    if(managed_env):
-        caList = list_containerapp(cmd, resource_group_name, managed_env)
-    else:
-        envList = list_managed_environments(cmd, resource_group_name)
-        envNames = []
-        for env in envList:
-            envNames.append(env["name"])       
-        caList = []
-        for envName in envNames:
-            caList += list_containerapp(cmd, resource_group_name, envName)  
-    print(caList)              
+def patch_list(cmd, resource_group_name, managed_env, show_all=False):
+    caList = list_containerapp(cmd, resource_group_name, managed_env)    
     imgs = []
     if caList:
         for ca in caList:
             containers = ca["properties"]["template"]["containers"]
             for container in containers:
-                result = dict(imageName=container["image"], targetContainerAppName=container["name"])
+                result = dict(imageName=container["image"], targetContainerName=container["name"], targetContainerAppName=ca["name"], revisionMode=ca["properties"]["configuration"]["activeRevisionsMode"])
                 imgs.append(result)
 
     # Get the BOM of the images
@@ -4328,25 +4318,28 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
     ## For production
     #
     for img in imgs:
-        subprocess.run("pack inspect-image " + img["imageName"] + " --output json > ./bom.json 2>&1", shell=True)
-        with open("./bom.json", "rb") as f:
-            bom = None
-            lines = f.read()
-            if lines.find(b"status code 401 Unauthorized") != -1 or lines.find(b"unable to find image") != -1:
-                bom = dict(remote_info=401)
-            else:
-                bom.update({ "targetContainerAppName": img["targetContainerAppName"] })
+        if (img["imageName"].find("run-dotnet") != -1) and (img["imageName"].find("cbl-mariner") != -1):
+            bom = { "remote_info": { "run_images": [{ "name": "mcr.microsoft.com/oryx/builder:" + img["imageName"].split(":")[-1] }] }, "image_name": img["imageName"], "targetContainerName": img["targetContainerName"], "targetContainerAppName": img["targetContainerAppName"], "revisionMode": img["revisionMode"] }
+        else:
+            subprocess.run("pack inspect-image " + img["imageName"] + " --output json > ./bom.json 2>&1", shell=True)
+            with open("./bom.json", "rb") as f:
+                bom = None
+                lines = f.read()
+                if lines.find(b"status code 401 Unauthorized") != -1 or lines.find(b"unable to find image") != -1:
+                    bom = dict(remote_info=401, image_name=img["imageName"])
+                else:
+                    bom = json.loads(lines)
+                bom.update({ "targetContainerName": img["targetContainerName"], "targetContainerAppName": img["targetContainerAppName"], "revisionMode": img["revisionMode"] })
         boms.append(bom)
 
-    ## For testing
-    #
+    # # For testing
     # with open("./bom.json", "rb") as f:
     #     lines = f.read()
     #     # if lines.find(b"status code 401 Unauthorized") == -1 or lines.find(b"unable to find image") == -1:
     #     #     bom = dict(remote_info=401)
     #     # else:
-    #     bom = json.loads(lines)
-    #     bom.update({ "targetContainerAppName": "test-containerapp-1" })
+    #           bom = json.loads(lines)
+    #     bom.update({ "targetContainerName": "test-containerapp-1" })
     # boms.append(bom)
 
     # Get the current tags of Dotnet Mariners
@@ -4354,17 +4347,16 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
     failedReason = "Failed to get BOM of the image. Please check if the image exists or you have the permission to access the image."
     notBasedMarinerReason = "Image not based on Mariner"
     mcrCheckReason = "Image not from mcr.microsoft.com/oryx/builder"
-    results = []
+    results = {"NotPatchable": []}
     # Start checking if the images are based on Mariner
     for bom in boms:
         if bom["remote_info"] == 401:
-            results.append(dict(targetContainerAppName=bom["targetContainerAppName"], oldRunImage=None, newRunImage=None, id=None, reason=failedReason))
+            results["NotPatchable"].append(dict(targetContainerName=bom["targetContainerName"], targetContainerAppName=bom["targetContainerAppName"], revisionMode=bom["revisionMode"], targetImageName=bom["image_name"], oldRunImage=None, newRunImage=None, id=None, reason=failedReason))
         else:
             # devide run-images into different parts by "/"
             runImagesProps = bom["remote_info"]["run_images"]
             if runImagesProps is None:
-                
-                results.append(dict(targetContainerAppName=bom["targetContainerAppName"], oldRunImage=None, newRunImage=None, id=None, reason=notBasedMarinerReason))
+                results["NotPatchable"].append(dict(targetContainerName=bom["targetContainerName"], targetContainerAppName=bom["targetContainerAppName"], revisionMode=bom["revisionMode"], targetImageName=bom["image_name"], oldRunImage=None, newRunImage=None, id=None, reason=notBasedMarinerReason))
             else:
                 for runImagesProp in runImagesProps:
                     # result = None
@@ -4373,14 +4365,65 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
                         runImagesTag = runImagesProp[1]
                         # Based on Mariners
                         if runImagesTag.find('mariner') != -1:
-                            results.append(patchableCheck(runImagesTag, oryxRunImgTags, bom=bom))
+                            checkResult = patchableCheck(runImagesTag, oryxRunImgTags, bom=bom)
+                            if checkResult["id"] == None:
+                                results["NotPatchable"].append(checkResult)
+                            else:
+                                results[checkResult["id"]] = checkResult
                         else: 
-                            results.append(dict(targetContainerAppName=bom["targetContainerAppName"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=failedReason))
+                            results["NotPatchable"].append(dict(targetContainerName=bom["targetContainerName"], targetContainerAppName=bom["targetContainerAppName"], revisionMode=bom["revisionMode"], targetImageName=bom["image_name"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=failedReason))
                     else:
                         # Not based on image from mcr.microsoft.com/dotnet
-                        results.append(dict(targetContainerAppName=bom["targetContainerAppName"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=mcrCheckReason))    
+                        results["NotPatchable"].append(dict(targetContainerName=bom["targetContainerName"], targetContainerAppName=bom["targetContainerAppName"], revisionMode=bom["revisionMode"], targetImageName=bom["image_name"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=mcrCheckReason))    
     if show_all == False :
-        results = [x for x in results if x["newRunImage"] != None]
-    if results == []:
-        return "No containerapps available to patch at this time."   
+        results = {k: v for k, v in results.items() if k != "NotPatchable"}
     return results
+
+def patch_run(cmd, resource_group_name, managed_env, show_all=False):
+    patchable_check_results = patch_list(cmd, resource_group_name, managed_env, show_all=show_all)
+    patchable_check_results_json = json.dumps(patchable_check_results, indent=4)
+    print(patchable_check_results_json)
+    user_input=input("Do you want to apply all the patch or specify by id? (y/n/id)\n")
+    return patch_apply(cmd, patchable_check_results, user_input)
+
+def patch_apply(cmd, patchCheckList, method):
+    results = []
+    m = method.strip().lower()
+    if m == "y":
+        for key in patchCheckList.keys():
+            if key != "NotPatchable":
+                if patchCheckList[key]["newRunImage"]:
+                    results.append(patch_cli_call(cmd, patchCheckList[key]["targetContainerAppName"], patchCheckList[key]["targetContainerName"], patchCheckList[key]["targetImageName"], patchCheckList[key]["newRunImage"], patchCheckList[key]["revisionMode"]))
+    elif m == "n":
+        print("No patch applied.")
+    else:
+        if method in patchCheckList.keys():
+            results.append(patch_cli_call(cmd, patchCheckList[method]["targetContainerAppName"], patchCheckList[method]["targetContainerName"], patchCheckList[method]["targetImageName"], patchCheckList[method]["newRunImage"], patchCheckList[method]["revisionMode"]))
+        else:
+            print("Invalid patch method or id.")
+
+def patch_cli_call(cmd, resource_group, container_app_name, container_name, target_image_name, new_run_image, revision_mode):
+    try:
+        print("Applying patch and publishing...")
+        subprocess.run(f"pack rebase {target_image_name} --run-image {new_run_image}", shell=True)
+        new_target_image_name = target_image_name.split(":")[0] + ":" + new_run_image.split(":")[1]
+        subprocess.run(f"docker tag {target_image_name} {new_target_image_name}", shell=True)
+        subprocess.run(f"docker push {new_target_image_name}", shell=True)
+        print("Patch applied and published successfully.\nNew image: " + new_target_image_name)
+    except Exception:
+        print("Error: Failed to apply patch and publish. Check if registry is logged in and has write access.")
+        raise
+    try:
+        print("Patching container app: " + container_app_name + " container: " + container_name + " with image: " + new_target_image_name)
+        update_info_json = update_containerapp(cmd, 
+                                          name=container_app_name, 
+                                          resource_group_name=resource_group, 
+                                          container_name=container_name, 
+                                          new_image_name=new_target_image_name)
+        print("Container app revision created successfully.")
+        update_info = json.loads(update_info_json)
+        new_revision_info = activate_revision(cmd, resource_group, revision_name=update_info["latestRevisionName"], name=container_app_name)
+        return new_revision_info
+    except Exception:
+        print("Error: Failed to create new revision with the container app.")
+        raise

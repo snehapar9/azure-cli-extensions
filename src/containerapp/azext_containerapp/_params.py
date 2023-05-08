@@ -321,7 +321,7 @@ def load_arguments(self, _):
         c.argument('name', configured_default='name', id_part=None)
         c.argument('managed_env', configured_default='managed_env')
         c.argument('registry_server', configured_default='registry_server')
-        c.argument('source', help='Local directory path containing the application source and Dockerfile for building the container image. Preview: If no Dockerfile is present, a container image is generated using Oryx. See the supported Oryx runtimes here: https://github.com/microsoft/Oryx/blob/main/doc/supportedRuntimeVersions.md.')
+        c.argument('source', help='Local directory path containing the application source and Dockerfile for building the container image. Preview: If no Dockerfile is present, a container image is generated using buildpacks. If Docker is not running or buildpacks cannot be used, Oryx will be used to generate the image. See the supported Oryx runtimes here: https://github.com/microsoft/Oryx/blob/main/doc/supportedRuntimeVersions.md.')
         c.argument('image', options_list=['--image', '-i'], help="Container image, e.g. publisher/image-name:tag.")
         c.argument('browse', help='Open the app in a web browser after creation and deployment, if possible.')
         c.argument('workload_profile_name', options_list=['--workload-profile-name', '-w'], help='The friendly name for the workload profile')
@@ -417,5 +417,10 @@ def load_arguments(self, _):
 
     with self.argument_context('containerapp patch list') as c:
         c.argument('resource_group_name', options_list=['--rg','-g'], configured_default='resource_group_name', id_part=None)
+        c.argument('environment', options_list=['--environment'], help='Name or resource id of the Container App environment.')
+        c.argument('show_all', options_list=['--show-all'],help='Show all patchable and non-patchable containerapps')
+    
+    with self.argument_context('containerapp patch run') as c:
+        c.argument('resource_group_name', option_list=['--rg','-g'], configured_default='resource_group_name', id_part=None)
         c.argument('environment', options_list=['--environment'], help='Name or resource id of the Container App environment.')
         c.argument('show_all', options_list=['--show-all'],help='Show all patchable and non-patchable containerapps')

@@ -4301,8 +4301,18 @@ def delete_workload_profile(cmd, resource_group_name, env_name, workload_profile
     except Exception as e:
         handle_raw_exception(e)
 
-def patch_list(cmd, resource_group_name, managed_env, show_all=False):
-    caList = list_containerapp(cmd, resource_group_name, managed_env)    
+def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
+    if(managed_env):
+        caList = list_containerapp(cmd, resource_group_name, managed_env)
+    else:
+        envList = list_managed_environments(cmd, resource_group_name)
+        envNames = []
+        for env in envList:
+            envNames.append(env["name"])       
+        caList = []
+        for envName in envNames:
+            caList += list_containerapp(cmd, resource_group_name, envName)  
+    print(caList)              
     imgs = []
     if caList:
         for ca in caList:
@@ -4311,7 +4321,7 @@ def patch_list(cmd, resource_group_name, managed_env, show_all=False):
                 result = dict(imageName=container["image"], targetContainerAppName=container["name"])
                 imgs.append(result)
 
-        # Get the BOM of the images
+    # Get the BOM of the images
     results = []
     boms = []
 
@@ -4325,7 +4335,7 @@ def patch_list(cmd, resource_group_name, managed_env, show_all=False):
             if lines.find(b"status code 401 Unauthorized") != -1 or lines.find(b"unable to find image") != -1:
                 bom = dict(remote_info=401)
             else:
-                bom = json.loads(lines)
+                 
             bom.update({ "targetContainerAppName": img["targetContainerAppName"] })
         boms.append(bom)
 
@@ -4372,4 +4382,6 @@ def patch_list(cmd, resource_group_name, managed_env, show_all=False):
                         results.append(dict(targetContainerAppName=bom["targetContainerAppName"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=mcrCheckReason))    
     if show_all == False :
         results = [x for x in results if x["newRunImage"] != None]
+    if results == []:
+        return "No containerapps available to patch at this time."   
     return results

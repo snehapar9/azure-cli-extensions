@@ -4382,13 +4382,15 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
                             else:
                                 results[checkResult["id"]] = checkResult
                         else: 
-                            results["NotPatchable"].append(dict(targetContainerName=bom["targetContainerName"], targetContainerAppName=bom["targetContainerAppName"],targetContainerAppEnvironmentName=bom["targetContainerAppEnvironmentName"], revisionMode=bom["revisionMode"], targetImageName=bom["image_name"], oldRunImage=bom["remote_info"]["run_images"]["name"], newRunImage=None, id=None, reason=failedReason))
-                            results.append(dict(targetContainerAppName=bom["targetContainerAppName"],targetContainerAppEnvironmentName=bom["targetContainerAppEnvironmentName"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=failedReason))
+                            results["NotPatchable"].append(dict(targetContainerName=bom["targetContainerName"], targetContainerAppName=bom["targetContainerAppName"],targetContainerAppEnvironmentName = bom["targetContainerAppEnvironmentName"], revisionMode=bom["revisionMode"], targetImageName=bom["image_name"], oldRunImage=bom["remote_info"]["run_images"]["name"], newRunImage=None, id=None, reason=failedReason))
+                            results.append(dict(targetContainerAppName=bom["targetContainerAppName"],targetContainerAppEnvironmentName = bom["targetContainerAppEnvironmentName"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=failedReason))
                     else:
                         # Not based on image from mcr.microsoft.com/dotnet
                         results.append(dict(targetContainerAppName=bom["targetContainerAppName"],targetContainerAppEnvironmentName=bom["targetContainerAppEnvironmentName"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=mcrCheckReason))    
-    if show_all == False :
+    if not show_all :
         results = {k: v for k, v in results.items() if k != "NotPatchable"}
+    if not results :
+        print("No Container App available to patch at this time.");return
     return results
 
 def patch_run(cmd, resource_group_name, managed_env=None, show_all=False):

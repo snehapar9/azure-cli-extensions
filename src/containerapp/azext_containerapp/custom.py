@@ -4309,18 +4309,7 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
         envList = list_managed_environments(cmd, resource_group_name)
         envNames = []
         for env in envList:
-            envNames.append(env["name"])  
-        # if(envNames):
-        #     envNames.append("Select all managed environments in my subscription.")    
-        # user_input = []
-        # input_message = "Enter managed environment:\n"
-        # for index, item in enumerate(envNames):
-        #     input_message += f'{index+1}) {item}\n'
-        # input_message += 'Your choice: '
-        # while user_input not in envNames:
-        #     user_input = [x for x in input(input_message).split()]
-        # print('You picked: ' + user_input)    
-        # userInput = input("Do you want to apply all the patch or specify by id? \n" + envNames)         
+            envNames.append(env["name"])
         caList = []
         for envName in envNames:
             caList+= list_containerapp(cmd,resource_group_name, envName)
@@ -4402,13 +4391,13 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
         results = {k: v for k, v in results.items() if k != "NotPatchable"}
     return results
 
-def patch_run(cmd, resource_group_name, managed_env, show_all=False):
+def patch_run(cmd, resource_group_name, managed_env=None, show_all=False):
     patchable_check_results = patch_list(cmd, resource_group_name, managed_env, show_all=show_all)
     patchable_result_key_list = list(patchable_check_results.keys())
     if len(patchable_result_key_list) == 0 or patchable_result_key_list == ["NotPatchable"]:
         print("No patchable image found.")
         if not show_all:
-            print("Use --show-all to show all the images' patchable check.")
+            print("Use --show-all to show all the patchable and unpatchable images.")
         return
     else:
         patchable_check_results_json = json.dumps(patchable_check_results, indent=4)

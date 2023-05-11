@@ -1272,6 +1272,12 @@ helps['containerapp compose create'] = """
               --compose-file-path "path/to/docker-compose.yml"
 """
 
+#Patch commands
+helps['containerapp patch'] = """
+    type: group
+    short-summary: Patch Azure Container Apps.
+"""
+
 helps['containerapp patch list'] = """
     type: command
     short-summary: List Container Apps to be patched.Patching is only available for the apps built using the source to cloud feature.

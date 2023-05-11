@@ -1283,6 +1283,7 @@ helps['containerapp patch list'] = """
       text: |
           az containerapp patch -g MyResourceGroup --environment MyContainerappEnv --show-all
 """
+
 helps['containerapp patch run'] = """
     type: command
     short-summary: List and select Container Apps to be patched.Patching is only available for the apps built using the source to cloud feature.

@@ -4393,7 +4393,7 @@ def patch_list(cmd, resource_group_name=None, managed_env=None, show_all=False):
         print("No Container App available to patch at this time.");return
     return results
 
-def patch_run(cmd, resource_group_name, managed_env=None, show_all=False):
+def patch_run(cmd, resource_group_name=None, managed_env=None, show_all=False):
     patchable_check_results = patch_list(cmd, resource_group_name, managed_env, show_all=show_all)
     patchable_result_key_list = list(patchable_check_results.keys())
     if len(patchable_result_key_list) == 0 or patchable_result_key_list == ["NotPatchable"]:

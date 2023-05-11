@@ -4302,7 +4302,7 @@ def delete_workload_profile(cmd, resource_group_name, env_name, workload_profile
         handle_raw_exception(e)
 
 
-def patch_list(cmd, resource_group_name=None, managed_env=None, show_all=False):
+def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
     if(managed_env):
         caList = list_containerapp(cmd, resource_group_name, managed_env)
     else:
@@ -4387,7 +4387,7 @@ def patch_list(cmd, resource_group_name=None, managed_env=None, show_all=False):
                     else:
                         # Not based on image from mcr.microsoft.com/dotnet
                         results.append(dict(targetContainerAppName=bom["targetContainerAppName"],targetContainerAppEnvironmentName=bom["targetContainerAppEnvironmentName"], oldRunImage=bom["remote_info"]["run_images"], newRunImage=None, id=None, reason=mcrCheckReason))    
-    if not show_all :
+    if not show_all == False :
         results = {k: v for k, v in results.items() if k != "NotPatchable"}
     if not results :
         print("No Container App available to patch at this time.");return

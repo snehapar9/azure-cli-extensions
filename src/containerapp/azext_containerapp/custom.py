@@ -4302,7 +4302,7 @@ def delete_workload_profile(cmd, resource_group_name, env_name, workload_profile
         handle_raw_exception(e)
 
 
-def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
+def patch_list(cmd, resource_group_name=None, managed_env=None, show_all=False):
     if(managed_env):
         caList = list_containerapp(cmd, resource_group_name, managed_env)
     else:

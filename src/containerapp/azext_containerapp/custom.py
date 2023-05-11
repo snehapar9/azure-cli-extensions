@@ -4432,7 +4432,7 @@ def patch_run(cmd, resource_group_name=None, managed_env=None, show_all=False):
         print(patchable_check_results_json)
     user_input=input("Do you want to apply all the patch or specify by id? (y/n/id)\n")
     if user_input == "y":
-        telemetry_core.add_extension_event('patch-run')
+        telemetry_core.add_extension_event('containerapp',{'Context.Default.AzureCLI.PatchRun':"Ran patch run command"})
     return patch_apply(cmd, patchable_check_results, user_input, resource_group_name)
 
 def patch_apply(cmd, patchCheckList, method, resource_group_name):

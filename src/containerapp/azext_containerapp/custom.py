@@ -4463,8 +4463,7 @@ def patch_apply(cmd, patchCheckList, method, resource_group_name):
                                           patchCheckList[method]["newRunImage"], 
                                           patchApplyCount))
         else:
-            print("Invalid patch method or id."); return
-    print(patchApplyCount)    
+            print("Invalid patch method or id."); return 
     telemetry_core.add_extension_event('containerapp',{'Context.Default.AzureCLI.PatchApplyCount':{patchApplyCount}})    
     return results
 

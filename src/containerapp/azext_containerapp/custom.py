@@ -4447,20 +4447,17 @@ def patch_apply(cmd, patchCheckList, method, resource_group_name):
                                                   patchCheckList[key]["targetContainerAppName"],
                                                   patchCheckList[key]["targetContainerName"],
                                                   patchCheckList[key]["targetImageName"],
-                                                  patchCheckList[key]["newRunImage"],
-                                                  patchCheckList[key]["revisionMode"]))
+                                                  patchCheckList[key]["newRunImage"]))
     elif m == "n":
         print("No patch applied."); return
     else:
         if method in patchCheckList.keys():
             results.append(patch_cli_call(cmd,
-            results.append(patch_cli_call(cmd,
                                           resource_group_name,
                                           patchCheckList[method]["targetContainerAppName"], 
                                           patchCheckList[method]["targetContainerName"], 
                                           patchCheckList[method]["targetImageName"], 
-                                          patchCheckList[method]["newRunImage"], 
-                                          patchCheckList[method]["revisionMode"]))
+                                          patchCheckList[method]["newRunImage"]))
         else:
             print("Invalid patch method or id."); return
     return results

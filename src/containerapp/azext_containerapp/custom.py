@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import requests
 import json
 import subprocess
+import telemetry
 
 from azure.cli.core.azclierror import (
     RequiredArgumentMissingError,
@@ -4405,6 +4406,8 @@ def patch_run(cmd, resource_group_name=None, managed_env=None, show_all=False):
         patchable_check_results_json = json.dumps(patchable_check_results, indent=4)
         print(patchable_check_results_json)
     user_input=input("Do you want to apply all the patch or specify by id? (y/n/id)\n")
+    if(user_input == "y"):
+        telemetry.add_extension_event('patch-run')
     return patch_apply(cmd, patchable_check_results, user_input, resource_group_name)
 
 def patch_apply(cmd, patchCheckList, method, resource_group_name):

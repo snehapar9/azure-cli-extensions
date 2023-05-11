@@ -4438,6 +4438,8 @@ def patch_run(cmd, resource_group_name=None, managed_env=None, show_all=False):
 def patch_apply(cmd, patchCheckList, method, resource_group_name):
     results = []
     m = method.strip().lower()
+    # Tracks number of times patch was applied.
+    patchApplyCount = 0
     if m == "y":
         for key in patchCheckList.keys():
             if key != "NotPatchable":
@@ -4447,7 +4449,8 @@ def patch_apply(cmd, patchCheckList, method, resource_group_name):
                                                   patchCheckList[key]["targetContainerAppName"],
                                                   patchCheckList[key]["targetContainerName"],
                                                   patchCheckList[key]["targetImageName"],
-                                                  patchCheckList[key]["newRunImage"]))
+                                                  patchCheckList[key]["newRunImage"],
+                                                  patchApplyCount))
     elif m == "n":
         print("No patch applied."); return
     else:
@@ -4457,12 +4460,15 @@ def patch_apply(cmd, patchCheckList, method, resource_group_name):
                                           patchCheckList[method]["targetContainerAppName"], 
                                           patchCheckList[method]["targetContainerName"], 
                                           patchCheckList[method]["targetImageName"], 
-                                          patchCheckList[method]["newRunImage"]))
+                                          patchCheckList[method]["newRunImage"], 
+                                          patchApplyCount))
         else:
             print("Invalid patch method or id."); return
+    print(patchApplyCount)    
+    telemetry_core.add_extension_event('containerapp',{'Context.Default.AzureCLI.PatchApplyCount':{patchApplyCount}})    
     return results
 
-def patch_cli_call(cmd, resource_group, container_app_name, container_name, target_image_name, new_run_image):
+def patch_cli_call(cmd, resource_group, container_app_name, container_name, target_image_name, new_run_image, patch_apply_count=0):
     try:
         print("Applying patch and publishing...")
         subprocess.run(f"pack rebase {target_image_name} --run-image {new_run_image}", shell=True)
@@ -4470,6 +4476,7 @@ def patch_cli_call(cmd, resource_group, container_app_name, container_name, targ
         subprocess.run(f"docker tag {target_image_name} {new_target_image_name}", shell=True)
         subprocess.run(f"docker push {new_target_image_name}", shell=True)
         print("Patch applied and published successfully.\nNew image: " + new_target_image_name)
+        patch_apply_count+=1
     except Exception:
         print("Error: Failed to apply patch and publish. Check if registry is logged in and has write access.")
         raise

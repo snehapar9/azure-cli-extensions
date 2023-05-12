@@ -84,7 +84,7 @@ def load_arguments(self, _):
         c.argument('min_replicas', type=int, help="The minimum number of replicas.")
         c.argument('max_replicas', type=int, help="The maximum number of replicas.")
         c.argument('scale_rule_name', options_list=['--scale-rule-name', '--srn'], help="The name of the scale rule.")
-        c.argument('scale_rule_type', options_list=['--scale-rule-type', '--srt'], help="The type of the scale rule. Default: http.")
+        c.argument('scale_rule_type', options_list=['--scale-rule-type', '--srt'], help="The type of the scale rule. Default: http. For more information please visit https://learn.microsoft.com/azure/container-apps/scale-app#scale-triggers")
         c.argument('scale_rule_http_concurrency', type=int, options_list=['--scale-rule-http-concurrency', '--srhc', '--srtc', '--scale-rule-tcp-concurrency'], help="The maximum number of concurrent requests before scale out. Only supported for http and tcp scale rules.")
         c.argument('scale_rule_metadata', nargs="+", options_list=['--scale-rule-metadata', '--srm'], help="Scale rule metadata. Metadata must be in format \"<key>=<value> <key>=<value> ...\".")
         c.argument('scale_rule_auth', nargs="+", options_list=['--scale-rule-auth', '--sra'], help="Scale rule auth parameters. Auth parameters must be in format \"<triggerParameter>=<secretRef> <triggerParameter>=<secretRef> ...\".")
@@ -415,17 +415,18 @@ def load_arguments(self, _):
         c.argument('min_nodes', help="The minimum node count for the workload profile")
         c.argument('max_nodes', help="The maximum node count for the workload profile")
 
-    with self.argument_context('containerapp patch') as c:
-        c.argument('resource_group_name', arg_type=resource_group_name_type)
-        c.argument('managed_env', options_list=['--environment', '-e'], help='Name or resource id of the Container App environment.')
-        c.argument('show_all', options_list=['--show-all'], help='Show all patchable and unpatchable Container Apps')
-
+    # Patch
     with self.argument_context('containerapp patch list') as c:
         c.argument('resource_group_name', arg_type=resource_group_name_type)
         c.argument('managed_env', options_list=['--environment', '-e'], help='Name or resource id of the Container App environment.')
-        c.argument('show_all', options_list=['--show-all'], help='Show all patchable and unpatchable Container Apps')
+        c.argument('show_all', options_list=['--show-all'], help='Show all patchable and unpatchable container apps')
 
-    with self.argument_context('containerapp patch run') as c:
+    with self.argument_context('containerapp patch apply') as c:
         c.argument('resource_group_name', arg_type=resource_group_name_type)
         c.argument('managed_env', validator=validate_managed_env_name_or_id, options_list=['--environment', '-e'], help='Name or resource id of the Container App environment.')
-        c.argument('show_all', options_list=['--show-all'], help='Show all patchable and unpatchable Container Apps')
+        c.argument('show_all', options_list=['--show-all'], help='Show all patchable and unpatchable container apps')
+
+    with self.argument_context('containerapp patch interactive') as c:
+        c.argument('resource_group_name', arg_type=resource_group_name_type)
+        c.argument('managed_env', options_list=['--environment', '-e'], help='Name or resource id of the Container App environment.')
+        c.argument('show_all', options_list=['--show-all'], help='Show all patchable and unpatchable container apps')

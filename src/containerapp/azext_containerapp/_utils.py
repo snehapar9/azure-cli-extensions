@@ -7,15 +7,19 @@
 import time
 import json
 import platform
-import os
-import hashlib
-import re
 import docker
+import io
+import os
 import requests
-
+import hashlib
 import packaging.version as SemVer
+import re
+import tarfile
+import zipfile
+
 
 from urllib.parse import urlparse
+from urllib.request import urlopen
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from azure.cli.core.azclierror import (ValidationError, RequiredArgumentMissingError, CLIInternalError,
@@ -1732,8 +1736,7 @@ def is_docker_running():
         client = docker.from_env()
         # need any command that will show the docker daemon is not running
         client.containers.list()
-    except docker.errors.DockerException as e:
-        logger.warning(f"Exception thrown when getting Docker client: {e}")
+    except docker.errors.DockerException:
         out = False
     finally:
         if client:
@@ -1743,19 +1746,23 @@ def is_docker_running():
 
 def get_pack_exec_path():
     try:
-        dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "azext_containerapp")
-        bin_folder = dir_path + "/bin"
+
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        bin_folder = os.path.join(dir_path, "bin")
         if not os.path.exists(bin_folder):
             os.makedirs(bin_folder)
 
-        exec_name = ""
+        pack_cli_version = "v0.29.0"
+        exec_name = "pack"
+        compressed_download_file_name = f"pack-{pack_cli_version}"
         host_os = platform.system()
         if host_os == "Windows":
-            exec_name = "pack-v0.29.0-windows.exe"
+            compressed_download_file_name = f"{compressed_download_file_name}-windows.zip"
+            exec_name = "pack.exe"
         elif host_os == "Linux":
-            exec_name = "pack-v0.29.0-linux"
+            compressed_download_file_name = f"{compressed_download_file_name}-linux.tgz"
         elif host_os == "Darwin":
-            exec_name = "pack-v0.29.0-macos"
+            compressed_download_file_name = f"{compressed_download_file_name}-macos.tgz"
         else:
             raise Exception(f"Unsupported host OS: {host_os}")
 
@@ -1764,59 +1771,69 @@ def get_pack_exec_path():
             return exec_path
 
         # Attempt to install the pack CLI
-        url = f"https://cormteststorage.blob.core.windows.net/pack/{exec_name}"
-        r = requests.get(url)
-        with open(exec_path, "wb") as f:
-            f.write(r.content)
-            print(f"Successfully installed pack CLI to {exec_path}\n")
-            return exec_path
+        url = f"https://github.com/buildpacks/pack/releases/download/{pack_cli_version}/{compressed_download_file_name}"
+        req = urlopen(url)
+        compressed_file = io.BytesIO(req.read())
+        if host_os == "Windows":
+            zip_file = zipfile.ZipFile(compressed_file)
+            for file in zip_file.namelist():
+                if file.endswith(exec_name):
+                    with open(exec_path, "wb") as f:
+                        f.write(zip_file.read(file))
+        else:
+            with tarfile.open(fileobj=compressed_file, mode="r:gz") as tar:
+                for tar_info in tar:
+                    if tar_info.isfile() and tar_info.name.endswith(exec_name):
+                        with open(exec_path, "wb") as f:
+                            f.write(tar.extractfile(tar_info).read())
 
+        return exec_path
     except Exception as e:
         # Swallow any exceptions thrown when attempting to install pack CLI
-        print(f"Failed to install pack CLI: {e}\n")
+        logger.warning(f"Failed to install pack CLI: {e}\n")
 
-    return ""
+    return None
 
 
-def patchable_check(repo_tag_split: str, oryx_builder_run_img_tags, bom):
+def patchable_check(repo_tag_split: str, oryx_builder_run_img_tags, inspect_result):
     tag_prop = parse_oryx_mariner_tag(repo_tag_split)
     if tag_prop is None:
         result = {
-            "targetContainerAppName": bom["targetContainerAppName"],
-            "targetContainerName": bom["targetContainerName"],
-            "targetContainerAppEnvironmentName": bom["targetContainerAppEnvironmentName"],
-            "targetResourceGroup": bom["targetResourceGroup"],
-            "targetImageName": bom["image_name"],
+            "targetContainerAppName": inspect_result["targetContainerAppName"],
+            "targetContainerName": inspect_result["targetContainerName"],
+            "targetContainerAppEnvironmentName": inspect_result["targetContainerAppEnvironmentName"],
+            "targetResourceGroup": inspect_result["targetResourceGroup"],
+            "targetImageName": inspect_result["image_name"],
             "oldRunImage": repo_tag_split,
             "newRunImage": None,
             "id": None,
             "reason": "Image not based on dotnet Mariner."
         }
         return result
-    # elif len(str(tag_prop["version"]).split(".")) == 2:
-    #     result = {
-    #         "targetContainerAppName": bom["targetContainerAppName"],
-    #         "targetContainerName": bom["targetContainerName"],
-    #         "targetContainerAppEnvironmentName": bom["targetContainerAppEnvironmentName"],
-    #         "targetResourceGroup": bom["targetResourceGroup"],
-    #         "targetImageName": bom["image_name"],
-    #         "oldRunImage": repo_tag_split,
-    #         "newRunImage": None,
-    #         "id": None,
-    #         "reason": "Image is a patchless version."
-    #     }
-    #     return result
+    elif len(str(tag_prop["version"]).split(".")) == 2:
+        result = {
+            "targetContainerAppName": inspect_result["targetContainerAppName"],
+            "targetContainerName": inspect_result["targetContainerName"],
+            "targetContainerAppEnvironmentName": inspect_result["targetContainerAppEnvironmentName"],
+            "targetResourceGroup": inspect_result["targetResourceGroup"],
+            "targetImageName": inspect_result["image_name"],
+            "oldRunImage": repo_tag_split,
+            "newRunImage": None,
+            "id": None,
+            "reason": "Image is using a version that doesn't contain a patch information."
+        }
+        return result
     repo_tag_split = repo_tag_split.split("-")
     if repo_tag_split[1] == "dotnet":
         matching_version_info = oryx_builder_run_img_tags[repo_tag_split[2]][str(tag_prop["version"].major) + "." + str(tag_prop["version"].minor)][tag_prop["support"]][tag_prop["marinerVersion"]]
-    # Check if the image minor version is four less than the latest minor version
+    # Check if the image minor version is less than the latest minor version
     if tag_prop["version"] < matching_version_info[0]["version"]:
         result = {
-            "targetContainerAppName": bom["targetContainerAppName"],
-            "targetContainerName": bom["targetContainerName"],
-            "targetContainerAppEnvironmentName": bom["targetContainerAppEnvironmentName"],
-            "targetResourceGroup": bom["targetResourceGroup"],
-            "targetImageName": bom["image_name"],
+            "targetContainerAppName": inspect_result["targetContainerAppName"],
+            "targetContainerName": inspect_result["targetContainerName"],
+            "targetContainerAppEnvironmentName": inspect_result["targetContainerAppEnvironmentName"],
+            "targetResourceGroup": inspect_result["targetResourceGroup"],
+            "targetImageName": inspect_result["image_name"],
             "oldRunImage": tag_prop["fullTag"],
         }
         if (tag_prop["version"].minor == matching_version_info[0]["version"].minor) and (tag_prop["version"].micro < matching_version_info[0]["version"].micro):
@@ -1831,15 +1848,15 @@ def patchable_check(repo_tag_split: str, oryx_builder_run_img_tags, bom):
             result["reason"] = "The image is not pachable Please check for major or minor version upgrade."
     else:
         result = {
-            "targetContainerAppName": bom["targetContainerAppName"],
-            "targetContainerName": bom["targetContainerName"],
-            "targetContainerAppEnvironmentName": bom["targetContainerAppEnvironmentName"],
-            "targetResourceGroup": bom["targetResourceGroup"],
-            "targetImageName": bom["image_name"],
+            "targetContainerAppName": inspect_result["targetContainerAppName"],
+            "targetContainerName": inspect_result["targetContainerName"],
+            "targetContainerAppEnvironmentName": inspect_result["targetContainerAppEnvironmentName"],
+            "targetResourceGroup": inspect_result["targetResourceGroup"],
+            "targetImageName": inspect_result["image_name"],
             "oldRunImage": tag_prop["fullTag"],
             "newRunImage": None,
             "id": None,
-            "reason": "You're already up to date!"
+            "reason": "The image is already up to date."
         }
     return result
 
@@ -1847,7 +1864,6 @@ def patchable_check(repo_tag_split: str, oryx_builder_run_img_tags, bom):
 def get_current_mariner_tags() -> list(OryxMarinerRunImgTagProperty):
     r = requests.get("https://mcr.microsoft.com/v2/oryx/builder/tags/list")
     tags = r.json()
-    # tags = dict(tags=["run-dotnet-aspnet-7.0.1-cbl-mariner2.0", "run-dotnet-aspnet-7.0.1-cbl-mariner1.0", "run-dotnet-aspnet-7.1.0-cbl-mariner2.0"])
     tag_list = {}
     # only keep entries that container keyword "mariner"
     tags = [tag for tag in tags["tags"] if "mariner" in tag]
@@ -1873,6 +1889,14 @@ def get_current_mariner_tags() -> list(OryxMarinerRunImgTagProperty):
             else:
                 tag_list[framework] = {major_minor_ver: {support: {mariner_ver: [tag_obj]}}}
     return tag_list
+
+
+def get_latest_buildpack_run_tag(framework, version, support = "lts", mariner_version = "cbl-mariner2.0"):
+    tags = get_current_mariner_tags()
+    try:
+        return tags[framework][version][support][mariner_version][0]["fullTag"]
+    except KeyError:
+        return None
 
 
 def parse_oryx_mariner_tag(tag: str) -> OryxMarinerRunImgTagProperty:

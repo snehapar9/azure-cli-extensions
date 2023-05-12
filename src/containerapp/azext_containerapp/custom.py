@@ -4411,7 +4411,7 @@ def patch_run_interactive(cmd, resource_group_name=None, managed_env=None, show_
     if without_unpatchable_results == []:
         return
     user_input = input("Do you want to apply all the patch or specify by id? (y/n/id)\n")
-    if user_input == "y":
+    if user_input != "n":
         telemetry_core.add_extension_event('containerapp',{'Context.Default.AzureCLI.PatchRun':"Ran patch run command"})
     return patch_apply(cmd, patchable_check_results, user_input, resource_group_name, pack_exec_path)
 

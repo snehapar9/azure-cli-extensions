@@ -187,7 +187,7 @@ def update_containerapp_yaml(cmd, name, resource_group_name, file_name, from_rev
 
     if not containerapp_def:
         raise ValidationError("The containerapp '{}' does not exist".format(name))
-
+    existed_environment_id = containerapp_def['properties']['environmentId']
     containerapp_def = None
 
     # Deserialize the yaml into a ContainerApp object. Need this since we're not using SDK
@@ -232,6 +232,10 @@ def update_containerapp_yaml(cmd, name, resource_group_name, file_name, from_rev
         if "template" not in containerapp_def["properties"]:
             containerapp_def["properties"]["template"] = {}
         containerapp_def["properties"]["template"]["revisionSuffix"] = None
+
+    # Remove the environmentId in the PATCH payload if it has not been changed
+    if safe_get(containerapp_def, "properties", "environmentId") and safe_get(containerapp_def, "properties", "environmentId").lower() == existed_environment_id.lower():
+        del containerapp_def["properties"]['environmentId']
 
     try:
         r = ContainerAppClient.update(
@@ -4434,7 +4438,16 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
                             check_result = patchable_check(run_images_tag, oryx_run_img_tags, inspect_result=inspect_result)
                             results.append(check_result)
                         else:
-                            results.append(dict(targetContainerName=inspect_result["targetContainerName"], targetContainerAppName=inspect_result["targetContainerAppName"], targetContainerAppEnvironmentName=inspect_result["targetContainerAppEnvironmentName"], targetResourceGroup=inspect_result["targetResourceGroup"], targetImageName=inspect_result["image_name"], oldRunImage=inspect_result["remote_info"]["run_images"]["name"], newRunImage=None, id=None, reason=failed_reason))
+                            results.append(dict(
+                                targetContainerName=inspect_result["targetContainerName"],
+                                targetContainerAppName=inspect_result["targetContainerAppName"],
+                                targetContainerAppEnvironmentName=inspect_result["targetContainerAppEnvironmentName"],
+                                targetResourceGroup=inspect_result["targetResourceGroup"],
+                                targetImageName=inspect_result["image_name"],
+                                oldRunImage=run_images_tag,
+                                newRunImage=None,
+                                id=None,
+                                reason=failed_reason))
                     else:
                         # Not based on image from mcr.microsoft.com/dotnet
                         results.append(dict(targetContainerAppName=inspect_result["targetContainerAppName"], targetContainerAppEnvironmentName=inspect_result["targetContainerAppEnvironmentName"], targetResourceGroup=inspect_result["targetResourceGroup"], oldRunImage=inspect_result["remote_info"]["run_images"], newRunImage=None, id=None, reason=mcr_check_reason))

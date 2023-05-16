@@ -4141,11 +4141,6 @@ def show_auth_config(cmd, resource_group_name, name):
     return auth_settings
 
 # Compose
-<<<<<<<<< Temporary merge branch 1
-
-=========
-
->>>>>>>>> Temporary merge branch 2
 def create_containerapps_from_compose(cmd,  # pylint: disable=R0914
                                       resource_group_name,
                                       managed_env,
@@ -4313,7 +4308,7 @@ def delete_workload_profile(cmd, resource_group_name, env_name, workload_profile
     except Exception as e:
         handle_raw_exception(e)
 
-<<<<<<<<< Temporary merge branch 1
+
 def patch_list(cmd, resource_group_name, managed_env, show_all=False):
     caList = list_containerapp(cmd, resource_group_name, managed_env)
     imgs = []
@@ -4386,7 +4381,7 @@ def patch_list(cmd, resource_group_name, managed_env, show_all=False):
     if show_all == False :
         results = [x for x in results if x["newRunImage"] != None]
     return results
-=========
+
 
 def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
     if is_docker_running() is False:

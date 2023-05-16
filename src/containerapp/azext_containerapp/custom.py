@@ -4385,7 +4385,7 @@ def patch_list(cmd, resource_group_name, managed_env, show_all=False):
 
 def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
     if is_docker_running() is False:
-        logger.warning("Please install or start Docker and try again.")
+        logger.error("Please install or start Docker and try again.")
         return
     pack_exec_path = get_pack_exec_path()
     print("\rListing container apps...", end="", flush=True)
@@ -4451,7 +4451,7 @@ def patch_list(cmd, resource_group_name, managed_env=None, show_all=False):
     if show_all is False:
         results = [result for result in results if result["id"] is not None]
     if not results:
-        print("No container apps available to patch at this time. Use --show-all to show the container apps that cannot be patched.")
+        logger.warning("No container apps available to patch at this time. Use --show-all to show the container apps that cannot be patched.")
         return
     return results
 
@@ -4472,7 +4472,7 @@ def patch_get_image_inspection(pack_exec_path, img, info_list):
 
 def patch_interactive(cmd, resource_group_name=None, managed_env=None, show_all=False):
     if is_docker_running() is False:
-        logger.warning("Please install or start Docker and try again.")
+        logger.error("Please install or start Docker and try again.")
         return
     patchable_check_results = patch_list(cmd, resource_group_name, managed_env, show_all=show_all)
     pack_exec_path = get_pack_exec_path()
@@ -4492,7 +4492,7 @@ def patch_interactive(cmd, resource_group_name=None, managed_env=None, show_all=
 
 def patch_apply(cmd, resource_group_name=None, managed_env=None, show_all=False):
     if is_docker_running() is False:
-        logger.warning("Please install or start Docker and try again.")
+        logger.error("Please install or start Docker and try again.")
         return
     patchable_check_results = patch_list(cmd, resource_group_name, managed_env, show_all=show_all)
     pack_exec_path = get_pack_exec_path()
@@ -4513,21 +4513,22 @@ def patch_apply_handle_input(cmd, patch_check_list, method, pack_exec_path):
     m = method.strip().lower()
     # Track number of times patches were applied successfully.
     patch_apply_count = 0
-    if m == "y":
+    if input_method == "y":
+        telemetry_record_method = "y"
         for patch_check in patch_check_list:
-            if patch_check["id"]:
-                if patch_check["newRunImage"]:
-                    patch_cli_call(cmd,
-                                   patch_check["targetResourceGroup"],
-                                   patch_check["targetContainerAppName"],
-                                   patch_check["targetContainerName"],
-                                   patch_check["targetImageName"],
-                                   patch_check["newRunImage"],
-                                   pack_exec_path)
-                    # Increment patch_apply_count with every successful patch.
-                    patch_apply_count += 1
-    elif m == "n":
-        print("No patch applied.")
+            if patch_check["id"] and patch_check["newRunImage"]:
+                patch_cli_call(cmd,
+                               patch_check["targetResourceGroup"],
+                               patch_check["targetContainerAppName"],
+                               patch_check["targetContainerName"],
+                               patch_check["targetImageName"],
+                               patch_check["newRunImage"],
+                               pack_exec_path)
+                # Increment patch_apply_count with every successful patch.
+                patch_apply_count += 1
+    elif input_method == "n":
+        telemetry_record_method = "n"
+        logger.warning("No patch applied.")
         return
     else:
         # Check if method is an existing id in the list
@@ -4540,16 +4541,15 @@ def patch_apply_handle_input(cmd, patch_check_list, method, pack_exec_path):
                                patch_check["targetImageName"],
                                patch_check["newRunImage"],
                                pack_exec_path)
-                patch_apply_properties = {
-                    'Context.Default.AzureCLI.PatchApplyUserResponse': method,
-                    'Context.Default.AzureCLI.PatchApplyCount': 1
-                }
-                telemetry_core.add_extension_event('containerapp', patch_apply_properties)
-                return
-        print("Invalid patch method or id.")
-        return
+                patch_apply_count += 1
+                telemetry_record_method = input_method
+                break
+        else:
+            telemetry_record_method = "invalid"
+            logger.error("Invalid patch method or id.")
+
     patch_apply_properties = {
-        'Context.Default.AzureCLI.UserResponse': "yes",
+        'Context.Default.AzureCLI.PatchUserResponse': telemetry_record_method,
         'Context.Default.AzureCLI.PatchApplyCount': patch_apply_count
     }
     telemetry_core.add_extension_event('containerapp', patch_apply_properties)
@@ -4558,27 +4558,27 @@ def patch_apply_handle_input(cmd, patch_check_list, method, pack_exec_path):
 
 def patch_cli_call(cmd, resource_group, container_app_name, container_name, target_image_name, new_run_image, pack_exec_path):
     try:
-        print("Applying patch for container app: " + container_app_name + " container: " + container_name)
+        logger.warning("Applying patch for container app: " + container_app_name + " container: " + container_name)
         subprocess.run(f"{pack_exec_path} rebase -q {target_image_name} --run-image {new_run_image}", shell=True, check=True)
         new_target_image_name = target_image_name.split(":")[0] + ":" + new_run_image.split(":")[1]
         subprocess.run(f"docker tag {target_image_name} {new_target_image_name}", shell=True, check=True)
-        print(f"Publishing {new_target_image_name} to registry...")
+        logger.debug(f"Publishing {new_target_image_name} to registry...")
         subprocess.run(f"docker push -q {new_target_image_name}", shell=True, check=True)
-        print("Patch applied and published successfully.\nNew image: " + new_target_image_name)
+        logger.warning("Patch applied and published successfully.\nNew image: " + new_target_image_name)
     except Exception:
-        print("Error: Failed to apply patch and publish. Check if registry is logged in and has write access.")
+        logger.error("Error: Failed to apply patch and publish. Check if registry is logged in and has write access.")
         raise
     try:
-        print("Patching container app: " + container_app_name + " container: " + container_name)
-        print("Creating new revision with image: " + new_target_image_name)
+        logger.warning("Patching container app: " + container_app_name + " container: " + container_name)
+        logger.info("Creating new revision with image: " + new_target_image_name)
         update_info_json = update_containerapp(cmd,
                                                name=container_app_name,
                                                resource_group_name=resource_group,
                                                container_name=container_name,
                                                image=new_target_image_name)
         print(json.dumps(update_info_json, indent=2))
-        print("Container app revision created successfully from the patched image.")
+        logger.warning("Container app revision created successfully from the patched image.")
         return
     except Exception:
-        print("Error: Failed to create new revision with the container app.")
+        logger.error("Error: Failed to create new revision with the container app.")
         raise

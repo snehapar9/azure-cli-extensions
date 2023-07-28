@@ -100,6 +100,9 @@ helps['containerapp update'] = """
               --scale-rule-type my-custom-type \\
               --scale-rule-metadata key=value key2=value2 \\
               --scale-rule-auth triggerparam=secretref triggerparam=secretref
+    - name: Update a Container App from the provided application source
+      text: |
+          az containerapp update -n MyContainerapp -g MyResourceGroup --source . \\
 """
 
 helps['containerapp delete'] = """

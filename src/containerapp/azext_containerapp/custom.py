@@ -475,7 +475,15 @@ def create_containerapp(cmd,
                         workload_profile_name=None,
                         termination_grace_period=None,
                         secret_volume_mount=None,
-                        environment_type="managed"):
+                        environment_type="managed",
+                        source=None,
+                        repo=None,
+                        token=None,
+                        branch=None,
+                        context_path=None,
+                        service_principal_client_id=None,
+                        service_principal_client_secret=None,
+                        service_principal_tenant_id=None):
     raw_parameters = locals()
 
     containerapp_create_decorator = ContainerAppPreviewCreateDecorator(
@@ -528,7 +536,8 @@ def update_containerapp_logic(cmd,
                               registry_server=None,
                               registry_user=None,
                               registry_pass=None,
-                              secret_volume_mount=None):
+                              secret_volume_mount=None,
+                              source=None):
     _validate_subscription_registered(cmd, CONTAINER_APPS_RP)
     validate_revision_suffix(revision_suffix)
 
@@ -549,12 +558,19 @@ def update_containerapp_logic(cmd,
         containerapp_def = ContainerAppClient.show(cmd=cmd, resource_group_name=resource_group_name, name=name)
     except:
         pass
-
     if not containerapp_def:
         raise ResourceNotFoundError("The containerapp '{}' does not exist".format(name))
 
     new_containerapp = {}
     new_containerapp["properties"] = {}
+    if source and not registry_server:
+        registry_server = containerapp_def["properties"]["configuration"]["registries"][0]["server"]
+        parsed = urlparse(registry_server)
+        registry_name = (parsed.netloc if parsed.scheme else parsed.path).split('.')[0]
+        registry_user, registry_pass, _ = _get_acr_cred(cmd.cli_ctx, registry_name)
+        new_containerapp = update_container_app_source(cmd=cmd, containerapp_def=containerapp_def, name=name, target_port=target_port, image=image, workload_profile_name=workload_profile_name, ingress=ingress, source=source, registry_server=registry_server, registry_user=registry_user, registry_pass=registry_pass)
+        # Update image if --source was used to build the app.
+        image = new_containerapp["properties"]["template"]["containers"][0]["image"]
     if from_revision:
         try:
             r = ContainerAppClient.show_revision(cmd=cmd, resource_group_name=resource_group_name, container_app_name=name, name=from_revision)
@@ -959,6 +975,43 @@ def update_containerapp_logic(cmd,
         handle_raw_exception(e)
 
 
+def update_container_app_source(cmd, containerapp_def, name, target_port, image, workload_profile_name, ingress, source, registry_server, registry_user, registry_pass):
+        from ._up_utils import (ContainerApp, ResourceGroup, ContainerAppEnvironment, _reformat_image, get_token, _has_dockerfile, _get_dockerfile_content, _get_ingress_and_target_port, _get_registry_details)
+
+        dockerfile = "Dockerfile"
+
+        # Parse resource group name and managed env name
+        env_id = containerapp_def["properties"]['environmentId']
+        parsed_managed_env = parse_resource_id(env_id)
+        env_name = parsed_managed_env['name']
+        env_rg = parsed_managed_env['resource_group']
+
+        # Set image to None if it was previously set to the default image (case where image was not provided by the user) else reformat it
+        image = None if image is None else _reformat_image(source=source, image=image, repo=None)
+        location = containerapp_def["location"]
+
+        if source and not _has_dockerfile(source, dockerfile):
+            pass
+        else:
+            dockerfile_content = _get_dockerfile_content(repo=None, branch=None, token=None, source=source, context_path=None, dockerfile=dockerfile)
+            ingress, target_port = _get_ingress_and_target_port(ingress, target_port, dockerfile_content)
+
+        # Construct ContainerApp
+        resource_group = ResourceGroup(cmd, env_rg, location=location)
+        env = ContainerAppEnvironment(cmd, env_name, resource_group, location=location)
+        app = ContainerApp(cmd=cmd, name=name, resource_group=resource_group, image=image, env=env, target_port=target_port, workload_profile_name=workload_profile_name, ingress=ingress, registry_server=registry_server, registry_user=registry_user, registry_pass=registry_pass)
+
+        # Fetch registry credentials
+        _get_registry_details(cmd, app, source)  # fetch ACR creds from arguments registry arguments
+
+        # Uses buildpacks to generate image if Dockerfile was not provided by the user
+        app.run_acr_build(dockerfile, source, quiet=False, build_from_source=not _has_dockerfile(source, dockerfile))
+        # Update image
+        containerapp_def["properties"]["template"]["containers"][0]["image"] = HELLO_WORLD_IMAGE if app.image is None else app.image
+
+        return containerapp_def
+
+
 def update_containerapp(cmd,
                         name,
                         resource_group_name,
@@ -987,7 +1040,8 @@ def update_containerapp(cmd,
                         workload_profile_name=None,
                         termination_grace_period=None,
                         no_wait=False,
-                        secret_volume_mount=None):
+                        secret_volume_mount=None,
+                        source=None):
     _validate_subscription_registered(cmd, CONTAINER_APPS_RP)
 
     return update_containerapp_logic(cmd=cmd,
@@ -1018,7 +1072,8 @@ def update_containerapp(cmd,
                                      workload_profile_name=workload_profile_name,
                                      termination_grace_period=termination_grace_period,
                                      no_wait=no_wait,
-                                     secret_volume_mount=secret_volume_mount)
+                                     secret_volume_mount=secret_volume_mount,
+                                     source=source)
 
 
 def show_containerapp(cmd, name, resource_group_name, show_secrets=False):

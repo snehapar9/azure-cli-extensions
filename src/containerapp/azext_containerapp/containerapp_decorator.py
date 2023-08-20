@@ -67,6 +67,10 @@ from ._constants import (CONTAINER_APPS_RP,
                          MANAGED_ENVIRONMENT_TYPE,
                          MANAGED_ENVIRONMENT_RESOURCE_TYPE)
 
+from ._github_oauth import cache_github_token
+
+from ._github_oauth import cache_github_token
+
 logger = get_logger(__name__)
 
 
@@ -171,6 +175,30 @@ class BaseContainerAppDecorator(BaseResource):
 
     def get_argument_yaml(self):
         return self.get_param("yaml")
+
+    def get_argument_source(self):
+        return self.get_param("source")
+
+    def get_argument_repo(self):
+        return self.get_param("repo")
+
+    def get_argument_branch(self):
+        return self.get_param("branch")
+
+    def get_argument_token(self):
+        return self.get_param("token")
+
+    def get_argument_context_path(self):
+        return self.get_param("context_path")
+
+    def get_argument_service_principal_client_id(self):
+        return self.get_param("service_principal_client_id")
+
+    def get_argument_service_principal_client_secret(self):
+        return self.get_param("service_principal_client_secret")
+
+    def get_argument_service_principal_tenant_id(self):
+        return self.get_param("service_principal_tenant_id")
 
     def get_argument_image(self):
         return self.get_param("image")
@@ -338,7 +366,7 @@ class ContainerAppCreateDecorator(BaseContainerAppDecorator):
 
     def validate_arguments(self):
         validate_container_app_name(self.get_argument_name(), AppType.ContainerApp.name)
-        validate_create(self.get_argument_registry_identity(), self.get_argument_registry_pass(), self.get_argument_registry_user(), self.get_argument_registry_server(), self.get_argument_no_wait())
+        validate_create(self.get_argument_registry_identity(), self.get_argument_registry_pass(), self.get_argument_registry_user(), self.get_argument_registry_server(), self.get_argument_no_wait(), self.get_argument_source(), self.get_argument_repo())
         validate_revision_suffix(self.get_argument_revision_suffix())
 
     def construct_payload(self):
@@ -549,6 +577,9 @@ class ContainerAppCreateDecorator(BaseContainerAppDecorator):
             else:
                 set_managed_identity(self.cmd, self.get_argument_resource_group_name(), self.containerapp_def, user_assigned=[self.get_argument_registry_identity()])
 
+        if self.get_argument_source():
+            self.set_up_create_containerapp_if_source_or_repo()
+
     def create(self):
         try:
             r = self.client.create_or_update(
@@ -602,6 +633,59 @@ class ContainerAppCreateDecorator(BaseContainerAppDecorator):
                 linker_client.linker.begin_create_or_update(resource_uri=r["id"],
                                                             parameters=item["parameters"],
                                                             linker_name=item["linker_name"]).result()
+
+        if self.get_argument_repo():
+            app = self.set_up_create_containerapp_if_source_or_repo()
+            r = self.set_up_create_containerapp_repo(app=app, r=r, env=app.env, env_rg=app.resource_group.name)
+        return r
+
+    def set_up_create_containerapp_if_source_or_repo(self):
+        from ._up_utils import (ContainerApp, ResourceGroup, ContainerAppEnvironment, _reformat_image, get_token, _has_dockerfile, _get_dockerfile_content, _get_ingress_and_target_port, _get_registry_details)
+        ingress = self.get_argument_ingress()
+        target_port = self.get_argument_target_port()
+        dockerfile = "Dockerfile"
+        token = get_token(self.cmd, self.get_argument_repo(), self.get_argument_token())
+        # Parse resource group name and managed env name
+        env_id = self.containerapp_def["properties"]['environmentId']
+        parsed_managed_env = parse_resource_id(env_id)
+        env_name = parsed_managed_env['name']
+        env_rg = parsed_managed_env['resource_group']
+
+        # Parse location
+        env_info = self.get_environment_client().show(cmd=self.cmd, resource_group_name=env_rg, name=env_name)
+        location = env_info['location']
+
+        # Set image to None if it was previously set to the default image (case where image was not provided by the user) else reformat it
+        image = None if self.get_argument_image().__eq__(HELLO_WORLD_IMAGE) else _reformat_image(self.get_argument_source(), self.get_argument_repo(), self.get_argument_image())
+
+        if self.get_argument_source() and not _has_dockerfile(self.get_argument_source(), dockerfile):
+            pass
+        else:
+            dockerfile_content = _get_dockerfile_content(self.get_argument_repo(), self.get_argument_branch(), token, self.get_argument_source(), self.get_argument_context_path(), dockerfile)
+            ingress, target_port = _get_ingress_and_target_port(self.get_argument_ingress(), self.get_argument_target_port(), dockerfile_content)
+        # Construct ContainerApp
+        resource_group = ResourceGroup(self.cmd, env_rg, location=location)
+        env = ContainerAppEnvironment(self.cmd, env_name, resource_group, location=location)
+        app = ContainerApp(self.cmd, self.get_argument_name(), resource_group, None, image, env, target_port, self.get_argument_registry_server(), self.get_argument_registry_user(), self.get_argument_registry_pass(), self.get_argument_env_vars(), self.get_argument_workload_profile_name(), ingress)
+
+        # Fetch registry credentials
+        _get_registry_details(self.cmd, app, self.get_argument_source())  # fetch ACR creds from arguments registry arguments
+
+        if self.get_argument_source():
+            # Uses buildpacks to generate image if Dockerfile was not provided by the user
+            app.run_acr_build(dockerfile, self.get_argument_source(), quiet=False, build_from_source=not _has_dockerfile(self.get_argument_source(), dockerfile))
+            # Update image
+            self.containerapp_def["properties"]["template"]["containers"][0]["image"] = HELLO_WORLD_IMAGE if app.image is None else app.image
+        return app
+
+    def set_up_create_containerapp_repo(self, app, r, env, env_rg):
+        from ._up_utils import (_create_github_action, get_token)
+        # Get GitHub access token
+        token = get_token(self.cmd, self.get_argument_repo(), self.get_argument_token())
+        _create_github_action(app, env, self.get_argument_service_principal_client_id(), self.get_argument_service_principal_client_secret(),
+                              self.get_argument_service_principal_tenant_id(), self.get_argument_branch(), token, self.get_argument_repo(), self.get_argument_context_path())
+        cache_github_token(self.cmd, token, self.get_argument_repo())
+        r = self.client.show(cmd=self.cmd, resource_group_name=env_rg, name=app.name)
         return r
 
     def set_up_create_containerapp_yaml(self, name, file_name):

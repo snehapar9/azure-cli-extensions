@@ -216,6 +216,7 @@ def create_and_verify_containerapp_up_for_default_registry_image(
 
         # Assert that the Container App only has one container and the quickstart image is used
         app = test_cls.cmd(f"containerapp show -g {resource_group} -n {app_name}").get_output_in_json()
+        test_cls.assertEqual(app["properties"]["template"]["containers"][0]["name"], container_name)
         test_cls.assertEqual(app["properties"]["template"]["containers"][0]["image"], image)
         test_cls.assertEqual(len(app["properties"]["template"]["containers"]), 1)
 
@@ -234,6 +235,7 @@ def create_and_verify_containerapp_up_for_default_registry_image(
 
         # Assert that the Containre App only has one container and the source to cloud image is used
         app = test_cls.cmd(f"containerapp show -g {resource_group} -n {app_name}").get_output_in_json()
+        test_cls.assertEqual(app["properties"]["template"]["containers"][0]["name"], app_name)
         test_cls.assertEqual(app["properties"]["template"]["containers"][0]["image"].split("/")[0], "default")
         test_cls.assertEqual(len(app["properties"]["template"]["containers"]), 1)
 
@@ -260,7 +262,7 @@ def create_extension_and_custom_location(test_cls, resource_group, connected_clu
         connected_cluster_id = connected_cluster.get('id')
         location = TEST_LOCATION
         if format_location(location) == format_location(STAGE_LOCATION):
-            location = "eastus2euap"
+            location = "eastus"
         extension = test_cls.cmd(f'az k8s-extension create'
                                  f' --resource-group {resource_group}'
                                  f' --name containerapp-ext'

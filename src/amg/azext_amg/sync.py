@@ -5,8 +5,8 @@
 
 import json
 
-from msrestazure.tools import is_valid_resource_id, parse_resource_id
 from knack.log import get_logger
+from azure.mgmt.core.tools import is_valid_resource_id, parse_resource_id
 from azure.cli.core.azclierror import ArgumentUsageError
 from azure.cli.core.style import print_styled_text, Style
 
@@ -126,7 +126,7 @@ def sync(cmd, source, destination, folders_to_include=None, folders_to_exclude=N
             continue
 
         # Figure out whether we shall correct the data sources. It is possible the Uids are different
-        remap_datasource_uids(source_dashboard.get("dashboard"), uid_mapping, data_source_missed)
+        remap_datasource_uids(source_dashboard["dashboard"], uid_mapping, data_source_missed)
 
         if not dry_run:
             delete_dashboard(cmd, destination_workspace, dashboard_uid,
@@ -135,8 +135,8 @@ def sync(cmd, source, destination, folders_to_include=None, folders_to_exclude=N
 
         # sync library panels
         library_panel_skipped = False
-        panel_uids = {p["libraryPanel"]["uid"] for p in source_dashboard["dashboard"]["panels"] if "libraryPanel" in p}
-        for library_panel_uid in panel_uids:
+        library_panel_uids = _get_library_panels_uids_in_dashboard(source_dashboard["dashboard"])
+        for library_panel_uid in library_panel_uids:
             (status, content) = send_grafana_get(f'{source_endpoint}/api/library-elements/{library_panel_uid}',
                                                  http_headers)
             if status != 200:
@@ -144,6 +144,7 @@ def sync(cmd, source, destination, folders_to_include=None, folders_to_exclude=N
                 continue
 
             panel_name = content["result"]['name']
+            panel_folder_uid = content["result"]["folderUid"]
             panel_folder_name = content["result"]["meta"]["folderName"]
 
             # user error case where library panel in dashboard is not in an excluded folder
@@ -160,19 +161,22 @@ def sync(cmd, source, destination, folders_to_include=None, folders_to_exclude=N
 
             if not dry_run:
                 logger.info("Syncing library panel: %s", panel_folder_name + "/" + panel_name)
+                endpoint = f'{destination_endpoint}/api/library-elements/'
                 payload = {
                     'uid': content["result"]["uid"],
-                    'folderUid': content["result"]["folderUid"],
+                    'folderUid': panel_folder_uid if panel_folder_uid != 'general' else '',
                     'name': panel_name,
                     'model': content["result"]["model"],
                     'kind': content["result"]["kind"],
                 }
-                (status, content) = send_grafana_post(f'{destination_endpoint}/api/library-elements/',
-                                                      json.dumps(payload), http_headers)
+                (status, content) = send_grafana_post(endpoint, json.dumps(payload), http_headers)
                 if status >= 400:
                     if 'name or UID already exists' in content.get('message', ''):
-                        send_grafana_patch(f'{destination_endpoint}/api/library-elements/{library_panel_uid}',
-                                           json.dumps(payload), http_headers)
+                        endpoint = f'{destination_endpoint}/api/library-elements/{library_panel_uid}'
+                        (status, content) = send_grafana_get(endpoint, http_headers)
+
+                        payload["version"] = content["result"]["version"]  # avoid version mismatch
+                        (status, content) = send_grafana_patch(endpoint, json.dumps(payload), http_headers)
                     else:
                         logger.error(json.dumps(content))
 
@@ -225,3 +229,16 @@ def sync(cmd, source, destination, folders_to_include=None, folders_to_exclude=N
     output.append((Style.IMPORTANT, f"\n\nDry run: {dry_run if dry_run else False}\n"))
 
     print_styled_text(output)
+
+
+def _get_library_panels_uids_in_dashboard(json_content):
+    library_panel_uids = []
+    if "panels" in json_content:  # Grafana 9 empty dashboards won't have "panels" property
+        library_panel_uids += _get_library_panels_uids_in_dashboard(json_content["panels"])
+    else:
+        for panel in json_content:
+            if "panels" in panel:  # row type
+                library_panel_uids += _get_library_panels_uids_in_dashboard(panel["panels"])
+            elif "libraryPanel" in panel:
+                library_panel_uids.append(panel["libraryPanel"]["uid"])
+    return library_panel_uids
